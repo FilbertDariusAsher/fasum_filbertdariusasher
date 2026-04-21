@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "19284872025",
+    "project_id": "fasum-filbert",
+    "storage_bucket": "fasum-filbert.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:19284872025:android:2b2601ca1de0066ce8da48",
+        "android_client_info": {
+          "package_name": "com.example.fasum_filbert"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCwi9bY_kp5GQB85SVxh6gYazS8LG2jgzo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
