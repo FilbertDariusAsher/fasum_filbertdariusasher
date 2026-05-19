@@ -7,7 +7,7 @@ environment:
   sdk: ^3.11.0
 
 dependencies:
-  cloud_firestore: ^6.3.0
+  cloud_firestore: ^6.4.0
   firebase_auth: ^6.4.0
   firebase_core: ^4.6.0
   firebase_database: ^12.3.0
@@ -20,6 +20,7 @@ dependencies:
   geolocator: ^14.0.2
   shimmer: ^3.0.0
   http: ^1.6.0
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

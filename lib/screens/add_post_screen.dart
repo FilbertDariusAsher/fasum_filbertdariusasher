@@ -1,12 +1,15 @@
 import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:http/http.dart' as http;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shimmer/shimmer.dart';
 
 class AddPostScreen extends StatefulWidget {
@@ -17,13 +20,24 @@ class AddPostScreen extends StatefulWidget {
 }
 
 class _AddPostScreenState extends State<AddPostScreen> {
-  XFile? _imageFile;
   Uint8List? _imageBytes;
   String? _base64Image;
+
   final TextEditingController _descriptionController = TextEditingController();
+
   final ImagePicker _picker = ImagePicker();
+
   bool _isUploading = false;
-  final List<String> _categories = [
+
+  double? _latitude;
+  double? _longitude;
+
+  String? _aiCategory;
+  String? _aiDescription;
+
+  bool _isGeneratingAI = false;
+
+  List<String> _categories = [
     'Jalan Rusak',
     'Marka Pudar',
     'Lampu Mati',
@@ -42,11 +56,6 @@ class _AddPostScreenState extends State<AddPostScreen> {
     'Banjir',
     'Lainnya',
   ];
-  double? _latitude;
-  double? _longitude;
-  String? _aiCategory;
-  String? _aiDescription;
-  bool _isGenerating = false;
 
   void _showCategorySelection() {
     showModalBottomSheet(
@@ -64,6 +73,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
                 setState(() {
                   _aiCategory = category;
                 });
+
                 Navigator.pop(context);
               },
             );
@@ -82,14 +92,17 @@ class _AddPostScreenState extends State<AddPostScreen> {
   Future<void> _pickImage(ImageSource source) async {
     try {
       final pickedFile = await _picker.pickImage(source: source);
+
       if (pickedFile != null) {
+        final bytes = await pickedFile.readAsBytes();
+
         setState(() {
-          _imageFile = pickedFile;
-          _imageBytes = null;
+          _imageBytes = bytes;
           _aiCategory = null;
           _aiDescription = null;
           _descriptionController.clear();
         });
+
         await _compressAndEncodeImage();
         await _generateDescriptionAI();
       }
@@ -103,50 +116,35 @@ class _AddPostScreenState extends State<AddPostScreen> {
   }
 
   Future<void> _compressAndEncodeImage() async {
-    if (_imageFile == null) return;
+    if (_imageBytes == null) return;
+
     try {
-      final bytes = await _imageFile!.readAsBytes();
-      Uint8List finalBytes = bytes;
-
-      if (!kIsWeb) {
-        try {
-          final compressedImage = await FlutterImageCompress.compressWithList(
-            bytes,
-            quality: 50,
-          );
-          if (compressedImage.isNotEmpty) {
-            finalBytes = Uint8List.fromList(compressedImage);
-          }
-        } catch (_) {
-          // On platforms where the plugin is not available, keep original bytes.
-          finalBytes = bytes;
-        }
-      }
-
       setState(() {
-        _imageBytes = finalBytes;
-        _base64Image = base64Encode(finalBytes);
+        _base64Image = base64Encode(_imageBytes!);
       });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error compressing image: $e')));
+        ).showSnackBar(SnackBar(content: Text('Error encoding image: $e')));
       }
     }
   }
 
   Future<void> _generateDescriptionAI() async {
     if (_imageBytes == null) return;
-    setState(() => _isGenerating = true);
+
+    setState(() => _isGeneratingAI = true);
+
     try {
-      final imageBytes = _imageBytes!;
-      final base64Image = base64Encode(imageBytes);
-      const apiKey =
-          'AIzaSyCXbm8sCRTWm91zQBBXwkGvG-WMl2vD8nk'; // ganti dengan API key kamu
+      final base64Image = base64Encode(_imageBytes!);
+
+      const apiKey = 'AIzaSyCXbm8sCRTWm91zQBBXwkGvG-WMl2vD8nk';
+
       const url =
           'https://generativelanguage.googleapis.com/v1/models/'
           'gemini-2.0-flash:generateContent?key=$apiKey';
+
       final body = jsonEncode({
         "contents": [
           {
@@ -172,22 +170,32 @@ class _AddPostScreenState extends State<AddPostScreen> {
           },
         ],
       });
+
       final headers = {'Content-Type': 'application/json'};
+
       final response = await http.post(
         Uri.parse(url),
         headers: headers,
         body: body,
       );
+
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
+
         final text =
             jsonResponse['candidates'][0]['content']['parts'][0]['text'];
+
+        debugPrint("AI TEXT: $text");
+
         if (text != null && text.isNotEmpty) {
           final lines = text.trim().split('\n');
+
           String? category;
           String? description;
+
           for (var line in lines) {
             final lower = line.toLowerCase();
+
             if (lower.startsWith('kategori:')) {
               category = line.substring(9).trim();
             } else if (lower.startsWith('deskripsi:')) {
@@ -196,7 +204,9 @@ class _AddPostScreenState extends State<AddPostScreen> {
               description = line.substring(11).trim();
             }
           }
+
           description ??= text.trim();
+
           setState(() {
             _aiCategory = category ?? 'Tidak diketahui';
             _aiDescription = description!;
@@ -209,101 +219,60 @@ class _AddPostScreenState extends State<AddPostScreen> {
     } catch (e) {
       debugPrint('Failed to generate AI description: $e');
     } finally {
-      if (mounted) setState(() => _isGenerating = false);
+      if (mounted) {
+        setState(() => _isGeneratingAI = false);
+      }
     }
   }
 
   Future<void> _getLocation() async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+
       if (!serviceEnabled) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location services are disabled')),
+          const SnackBar(content: Text('Layanan lokasi tidak diaktifkan.')),
         );
+
         return;
       }
+
       LocationPermission permission = await Geolocator.checkPermission();
+
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
+
         if (permission == LocationPermission.deniedForever ||
             permission == LocationPermission.denied) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Location permissions are denied.')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Izin lokasi ditolak.')));
+
           return;
         }
       }
+
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
         ),
       ).timeout(const Duration(seconds: 10));
+
       setState(() {
         _latitude = position.latitude;
         _longitude = position.longitude;
       });
     } catch (e) {
-      debugPrint('Failed to retrieve location: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to retrieve location: $e')),
-      );
+      debugPrint('Failed to get location: $e');
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Gagal mendapatkan lokasi: $e')));
+
       setState(() {
         _latitude = null;
         _longitude = null;
       });
-    }
-  }
-
-  Future<void> _submitPost() async {
-    if (_base64Image == null || _descriptionController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please add an image and description')),
-      );
-      return;
-    }
-    setState(() => _isUploading = true);
-    final now = DateTime.now().toIso8601String();
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      setState(() => _isUploading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('User not found. Please sign in.')),
-      );
-      return;
-    }
-    try {
-      await _getLocation();
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .get();
-      final fullName = userDoc.data()?['fullbane'] ?? 'Annonymus';
-      await FirebaseFirestore.instance.collection('posts').add({
-        'image': _base64Image,
-        'description': _descriptionController.text,
-        'category': _aiCategory ?? 'Tidak diketahui',
-        'createdAt': now,
-        'latitude': _latitude,
-        'longitude': _longitude,
-        'fullName': fullName,
-        'userId': uid,
-      });
-      if (!mounted) return;
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Post uploaded successfully!')),
-      );
-    } catch (e) {
-      debugPrint('Upload Failed: $e');
-      if (!mounted) return;
-      setState(() => _isUploading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to upload the post : $e')));
-    } finally {
-      if (mounted) {
-        setState(() => _isUploading = false);
-      }
     }
   }
 
@@ -314,28 +283,29 @@ class _AddPostScreenState extends State<AddPostScreen> {
         return SafeArea(
           child: Wrap(
             children: <Widget>[
-              ListTile(
-                leading: const Icon(Icons.camera_alt),
-                title: const Text('Take a picture'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickImage(ImageSource.camera);
-                },
-              ),
+              if (!kIsWeb)
+                ListTile(
+                  leading: const Icon(Icons.camera_alt),
+                  title: const Text('Ambil Foto'),
+                  onTap: () {
+                    Navigator.pop(context);
+
+                    _pickImage(ImageSource.camera);
+                  },
+                ),
               ListTile(
                 leading: const Icon(Icons.photo_library),
                 title: const Text('Choose from gallery'),
                 onTap: () {
                   Navigator.pop(context);
-                  _pickImage((ImageSource.gallery));
+
+                  _pickImage(ImageSource.gallery);
                 },
               ),
               ListTile(
                 leading: const Icon(Icons.cancel),
                 title: const Text('Cancel'),
-                onTap: () {
-                  Navigator.pop(context);
-                },
+                onTap: () => Navigator.pop(context),
               ),
             ],
           ),
@@ -344,10 +314,80 @@ class _AddPostScreenState extends State<AddPostScreen> {
     );
   }
 
+  Future<void> _submitPost() async {
+    if (_base64Image == null || _descriptionController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please add an image and description')),
+      );
+
+      return;
+    }
+
+    setState(() => _isUploading = true);
+
+    final now = DateTime.now().toIso8601String();
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+
+    if (uid == null) {
+      setState(() => _isUploading = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("User not found. please Sign In")),
+      );
+
+      return;
+    }
+
+    try {
+      await _getLocation();
+
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+
+      final fullName = userDoc.data()?['fullName'] ?? 'Anonymous';
+
+      await FirebaseFirestore.instance.collection('posts').add({
+        'image': _base64Image,
+        'description': _descriptionController.text,
+        'category': _aiCategory ?? 'Tidak Diketahui',
+        'createdAt': now,
+        'latitude': _latitude,
+        'longitude': _longitude,
+        'fullName': fullName,
+        'userId': uid,
+      });
+
+      if (!mounted) return;
+
+      Navigator.pop(context);
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Post Upload Successfully')));
+    } catch (e) {
+      debugPrint('Upload Failed: $e');
+
+      if (!mounted) return;
+
+      setState(() => _isUploading = false);
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to upload post: $e')));
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Add Post')),
+      appBar: AppBar(title: const Text('Add Post')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -359,7 +399,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
                 height: 250,
                 decoration: BoxDecoration(
                   color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: _imageBytes != null
                     ? ClipRRect(
@@ -381,7 +421,8 @@ class _AddPostScreenState extends State<AddPostScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            if (_isGenerating)
+
+            if (_isGeneratingAI)
               Shimmer.fromColors(
                 baseColor: Colors.grey[300]!,
                 highlightColor: Colors.grey[100]!,
@@ -408,10 +449,12 @@ class _AddPostScreenState extends State<AddPostScreen> {
                   ],
                 ),
               ),
-            if (_aiCategory != null && !_isGenerating)
+
+            if (_aiCategory != null && !_isGeneratingAI)
               Padding(
-                padding: EdgeInsetsGeometry.all(15),
+                padding: const EdgeInsets.only(bottom: 12.0),
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     GestureDetector(
                       onTap: _showCategorySelection,
@@ -420,7 +463,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(_aiCategory!),
-                            const SizedBox(width: 4),
+                            const SizedBox(width: 6),
                             const Icon(Icons.edit, size: 16),
                           ],
                         ),
@@ -430,30 +473,33 @@ class _AddPostScreenState extends State<AddPostScreen> {
                     if (_imageBytes != null)
                       IconButton(
                         icon: const Icon(Icons.refresh),
-                        tooltip: 'Generate another description',
+                        tooltip: 'Generate Another Description',
                         onPressed: _generateDescriptionAI,
                       ),
                   ],
                 ),
               ),
+
             Offstage(
-              offstage: _isGenerating,
+              offstage: _isGeneratingAI,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   TextField(
                     controller: _descriptionController,
                     textCapitalization: TextCapitalization.sentences,
                     maxLines: 6,
                     decoration: const InputDecoration(
-                      hintText: 'add a brief description...',
+                      labelText: 'Add a brief description',
                       border: OutlineInputBorder(),
                     ),
                   ),
                 ],
               ),
             ),
+
             const SizedBox(height: 24),
+
             ElevatedButton(
               onPressed: _isUploading ? null : _submitPost,
               style: ElevatedButton.styleFrom(
@@ -464,12 +510,12 @@ class _AddPostScreenState extends State<AddPostScreen> {
               child: _isUploading
                   ? const SizedBox(
                       height: 24,
-                      width: 24,
+                      width: 40,
                       child: CircularProgressIndicator(
                         valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                       ),
                     )
-                  : const Text('post', style: TextStyle(color: Colors.white)),
+                  : const Text('Post', style: TextStyle(color: Colors.white)),
             ),
           ],
         ),
