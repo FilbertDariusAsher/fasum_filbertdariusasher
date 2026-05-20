@@ -35,6 +35,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           .doc(userCredential.user!.uid)
           .set({
             'fullname': _fullnameController.text.trim(),
+            'fullName': _fullnameController.text.trim(),
             'email': email,
             'createdAt': FieldValue.serverTimestamp(),
           });

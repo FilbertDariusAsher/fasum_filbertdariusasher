@@ -5,7 +5,6 @@ import 'package:fasum_filbert/screens/sign_in_screen.dart';
 import 'package:fasum_filbert/screens/detail_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -108,6 +107,22 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  final Map<String, String> _userNameCache = {};
+
+  Future<String> _loadUserName(String userId) async {
+    if (_userNameCache.containsKey(userId)) {
+      return _userNameCache[userId]!;
+    }
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .get();
+    final name =
+        userDoc.data()?['fullName'] ?? userDoc.data()?['fullname'] ?? 'Anonim';
+    _userNameCache[userId] = name;
+    return name;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -168,7 +183,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 final imageBase64 = data['image'];
                 final description = data['description'];
                 final createdAtStr = data['createdAt'];
-                final fullName = data['fullName'] ?? 'Anonim';
+                final authorName = data['fullName'] ?? data['fullname'];
+                final userId = data['userId'] as String?;
+                final detailFullName = authorName ?? 'Anonim';
                 final latitude = data['latitude'];
                 final longitude = data['longitude'];
                 final category = data['category'] ?? 'Lainnya';
@@ -189,7 +206,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           imageBase64: imageBase64,
                           description: description,
                           createdAt: createdAt,
-                          fullName: fullName,
+                          fullName: detailFullName,
                           latitude: latitude,
                           longitude: longitude,
                           category: category,
@@ -232,13 +249,30 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                fullName,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
+                              if (authorName != null)
+                                Text(
+                                  authorName,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                )
+                              else
+                                FutureBuilder<String>(
+                                  future: userId != null
+                                      ? _loadUserName(userId)
+                                      : Future.value('Anonim'),
+                                  builder: (context, snapshot) {
+                                    final name = snapshot.data ?? 'Anonim';
+                                    return Text(
+                                      name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    );
+                                  },
                                 ),
-                              ),
                               Text(
                                 formatTime(createdAt),
                                 style: const TextStyle(

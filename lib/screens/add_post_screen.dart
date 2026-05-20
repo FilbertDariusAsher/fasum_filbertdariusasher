@@ -8,7 +8,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shimmer/shimmer.dart';
 
@@ -56,32 +55,6 @@ class _AddPostScreenState extends State<AddPostScreen> {
     'Banjir',
     'Lainnya',
   ];
-
-  void _showCategorySelection() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (BuildContext context) {
-        return ListView(
-          shrinkWrap: true,
-          children: _categories.map((category) {
-            return ListTile(
-              title: Text(category),
-              onTap: () {
-                setState(() {
-                  _aiCategory = category;
-                });
-
-                Navigator.pop(context);
-              },
-            );
-          }).toList(),
-        );
-      },
-    );
-  }
 
   @override
   void dispose() {
@@ -283,28 +256,32 @@ class _AddPostScreenState extends State<AddPostScreen> {
         return SafeArea(
           child: Wrap(
             children: <Widget>[
-              if (!kIsWeb)
-                ListTile(
-                  leading: const Icon(Icons.camera_alt),
-                  title: const Text('Ambil Foto'),
-                  onTap: () {
-                    Navigator.pop(context);
-
-                    _pickImage(ImageSource.camera);
-                  },
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  'Pilih sumber gambar',
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
+              ),
               ListTile(
-                leading: const Icon(Icons.photo_library),
-                title: const Text('Choose from gallery'),
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Ambil Foto'),
                 onTap: () {
                   Navigator.pop(context);
-
+                  _pickImage(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Pilih dari galeri'),
+                onTap: () {
+                  Navigator.pop(context);
                   _pickImage(ImageSource.gallery);
                 },
               ),
               ListTile(
                 leading: const Icon(Icons.cancel),
-                title: const Text('Cancel'),
+                title: const Text('Batal'),
                 onTap: () => Navigator.pop(context),
               ),
             ],
@@ -347,7 +324,10 @@ class _AddPostScreenState extends State<AddPostScreen> {
           .doc(uid)
           .get();
 
-      final fullName = userDoc.data()?['fullName'] ?? 'Anonymous';
+      final fullName =
+          userDoc.data()?['fullName'] ??
+          userDoc.data()?['fullname'] ??
+          'Anonymous';
 
       await FirebaseFirestore.instance.collection('posts').add({
         'image': _base64Image,
@@ -422,6 +402,36 @@ class _AddPostScreenState extends State<AddPostScreen> {
             ),
             const SizedBox(height: 16),
 
+            Text('Kategori', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _aiCategory,
+              isExpanded: true,
+              onChanged: (value) {
+                setState(() {
+                  _aiCategory = value;
+                });
+              },
+              decoration: InputDecoration(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                hintText: 'Pilih kategori Kerusakan',
+              ),
+              items: _categories.map((category) {
+                return DropdownMenuItem<String>(
+                  value: category,
+                  child: Text(category),
+                );
+              }).toList(),
+            ),
+
+            const SizedBox(height: 16),
+
             if (_isGeneratingAI)
               Shimmer.fromColors(
                 baseColor: Colors.grey[300]!,
@@ -446,36 +456,6 @@ class _AddPostScreenState extends State<AddPostScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                  ],
-                ),
-              ),
-
-            if (_aiCategory != null && !_isGeneratingAI)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    GestureDetector(
-                      onTap: _showCategorySelection,
-                      child: Chip(
-                        label: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(_aiCategory!),
-                            const SizedBox(width: 6),
-                            const Icon(Icons.edit, size: 16),
-                          ],
-                        ),
-                        backgroundColor: Colors.blue[100],
-                      ),
-                    ),
-                    if (_imageBytes != null)
-                      IconButton(
-                        icon: const Icon(Icons.refresh),
-                        tooltip: 'Generate Another Description',
-                        onPressed: _generateDescriptionAI,
-                      ),
                   ],
                 ),
               ),
