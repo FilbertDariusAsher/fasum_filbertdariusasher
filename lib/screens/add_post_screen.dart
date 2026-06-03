@@ -291,6 +291,35 @@ class _AddPostScreenState extends State<AddPostScreen> {
     );
   }
 
+  Future<void> sendNotificationToTopic(String body, String senderName) async {
+    final url = Uri.parse('https://vercel.app');
+    final response = await http.post(
+      url,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        "topic": "berita-fasum",
+        "title": " 🔔 Laporan Baru",
+        "body": body,
+        "senderName": senderName,
+        "senderPhotoUrl": "https://vecteezy.com",
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('✅ Notifikasi berhasil dikirim')),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Gagal kirim notifikasi: ${response.body}')),
+        );
+      }
+    }
+  }
+
   Future<void> _submitPost() async {
     if (_base64Image == null || _descriptionController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -341,6 +370,8 @@ class _AddPostScreenState extends State<AddPostScreen> {
       });
 
       if (!mounted) return;
+
+      sendNotificationToTopic(_descriptionController.text, fullName);
 
       Navigator.pop(context);
 
